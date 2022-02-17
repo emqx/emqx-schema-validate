@@ -5,6 +5,7 @@ BPAPI
 BSON
 Backplane
 CA
+CAs
 CHACHA
 CLI
 CMD
@@ -38,6 +39,8 @@ MitM
 Multicast
 NIF
 OTP
+PSK
+PSKs
 PEM
 PINGREQ
 PSK
@@ -232,6 +235,7 @@ typerefl
 udp
 uid
 unsub
+un-acked
 uplink
 url
 utc

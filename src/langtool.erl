@@ -18,6 +18,9 @@
 %% API:
 -export([start/0, stop/0, req/1, format_warning/1]).
 
+%% debug:
+-export([text_to_data/1]).
+
 -include_lib("kernel/include/logger.hrl").
 
 %%================================================================================
@@ -41,7 +44,8 @@ stop() ->
 req(Text) ->
     Annotation = text_to_data(Text),
     Payload = {form, [{language, <<"en-US">>},
-                      {data, Annotation}]},
+                      {data, Annotation},
+                      {disabledCategories, <<"TYPOGRAPHY">>}]},
     Headers = [],
     URL = <<"http://localhost:17910/v2/check">>,
     Options = [],
@@ -56,36 +60,31 @@ req(Text) ->
 -spec format_warning(map()) -> iolist().
 format_warning(Warn) ->
     #{context :=  #{text := Context, length := Length, offset := Offset},
-      rule := #{description := Description},
+      rule := #{description := Description, category := #{id := Cat}},
       replacements := Repl0
      } = Warn,
     Repl1 = lists:sublist([I || #{value := I} <- Repl0], 5),
     Underscore = [[$  || _ <- lists:seq(1, Offset)], [$~ || _ <- lists:seq(1, Length)]],
     Replacements = lists:join(", ", Repl1),
-    io_lib:format("~s~n~s~nDescription: ~s~nReplacements: ~s~n",
-                  [Context, Underscore, Description, Replacements]).
+    io_lib:format("~s~n~s~nError: (~s) ~s~nReplacements: ~s~n",
+                  [Context, Underscore, Cat, Description, Replacements]).
 
 %%================================================================================
 %% Internal functions
 %%================================================================================
 
 text_to_data(Text) ->
-    {_, Payload} = trane:sax(<<"<p>", Text/binary, "</p>">>, fun scan_html/2, {false, []}),
+    {_, Payload} = trane:sax(<<"<p>", Text/binary, "</p>">>, fun scan_html/2, {text, []}),
     jsone:encode(#{annotation => lists:reverse(Payload)}).
 
--record(s,
-        { skip :: boolean()
-        , acc  :: list()
-        }).
-
-scan_html({text, Txt}, {false, Acc}) ->
-    {false, [#{text => Txt}|Acc]};
-scan_html({tag, <<"br">>, _}, {false, Acc}) ->
-    {false, [#{text => <<"\n">>}|Acc]};
-scan_html({tag, <<"code">>, _}, {false, Acc}) ->
-    {true, Acc};
-scan_html({end_tag, <<"code">>}, {true, Acc}) ->
-    {false, Acc};
+scan_html({text, Txt}, {Type, Acc}) ->
+    {Type, [#{Type => Txt}|Acc]};
+scan_html({tag, "br", _}, {Type, Acc}) ->
+    {Type, [#{Type => <<"\n">>}|Acc]};
+scan_html({tag, "code", _}, {_, Acc}) ->
+    {markup, Acc};
+scan_html({end_tag, "code"}, {_, Acc}) ->
+    {text, [#{text => <<"Code">>}|Acc]}; %% Create a placeholder
 scan_html(_Skip, Acc) ->
     Acc.
 
