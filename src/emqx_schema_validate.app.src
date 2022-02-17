@@ -1,0 +1,17 @@
+{application, emqx_schema_validate,
+ [{description, "An escript"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    jsone,
+    hackney,
+    trane
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
