@@ -15,9 +15,13 @@ main([JsonFile]) ->
     {ok, Binary} = file:read_file(JsonFile),
     Data = jsone:decode(Binary, [{object_format, map}, {keys, atom}]),
     spellcheck_schema(Data),
-    format_undocumented_stats();
+    format_undocumented_stats(),
+    case is_ok() of
+        true -> halt(0);
+        false -> halt(1)
+    end;
 main(_) ->
-    io:format("Usage: emqx_schema_validate <path-to-json-dump>~n", []),
+    io:format("Usage: emqx_schema_validate <path-to-json-schema-dump>~n", []),
     erlang:halt(1).
 
 %%====================================================================
@@ -29,12 +33,7 @@ format_undocumented_stats() ->
     {_, Vals} = lists:unzip(Stats),
     Total = lists:sum(Vals),
     io:format(user, "~nUndocumented values ~p:~n", [Total]),
-    [io:format(user, "~-40.. s ~p~n", [Root, Val]) || {Root, Val} <- lists:reverse(Stats)],
-    if Total > 0 ->
-            halt(1);
-       true ->
-            halt(0)
-    end.
+    [io:format(user, "~-40.. s ~p~n", [Root, Val]) || {Root, Val} <- lists:reverse(Stats)].
 
 spellcheck_schema(Data) ->
     try
@@ -54,6 +53,7 @@ do_spellcheck(FullName, #{name := Name, desc := Desc}) ->
         [] ->
             [];
         L  ->
+            setfail(),
             io:format(user, "!! '~s'::~s~n~n", [FullName, Name]),
             [io:format(user, "~s", [langtool:format_warning(I)]) || I <- L],
             []
@@ -62,3 +62,9 @@ do_spellcheck(FullName, #{name := Name}) ->
     ets:update_counter(?TAB, FullName, {2, 1}, {FullName, 0}),
     io:format(user, "Warning: ~s.~s field doesn't have a description~n", [FullName, Name]),
     [{FullName, Name}].
+
+setfail() ->
+    put(?MODULE, true).
+
+is_ok() ->
+    get(?MODULE) =/= true.
