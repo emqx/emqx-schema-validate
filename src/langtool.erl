@@ -32,12 +32,9 @@
 %%================================================================================
 
 start() ->
-    exec("docker create --name langtool -p 17910:8010 mylangtool"),
-    0 = exec("docker start langtool"),
-    wait_langtool(20).
+    wait_langtool(300).
 
 stop() ->
-    %%exec("docker stop langtool"),
     ok.
 
 -spec req(string()) -> [map()].
@@ -47,7 +44,7 @@ req(Text) ->
                       {data, Annotation},
                       {disabledCategories, <<"TYPOGRAPHY">>}]},
     Headers = [],
-    URL = <<"http://localhost:17910/v2/check">>,
+    URL = <<"http://localhost:8010/v2/check">>,
     Options = [],
     {ok, Code, _RespHeaders, ClientRef} = hackney:post(URL,
                                                        Headers, Payload,
