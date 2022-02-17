@@ -16,7 +16,7 @@
 -module(langtool).
 
 %% API:
--export([start/0, stop/0, req/1]).
+-export([start/0, stop/0, req/1, format_warning/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -37,7 +37,7 @@ stop() ->
     %%exec("docker stop langtool"),
     ok.
 
--spec req(string()) -> _.
+-spec req(string()) -> [map()].
 req(Text) ->
     Annotation = text_to_data(Text),
     Payload = {form, [{language, <<"en-US">>},
@@ -53,20 +53,41 @@ req(Text) ->
     #{matches := Matches} = jsone:decode(Body, [{object_format, map}, {keys, atom}]),
     Matches.
 
+-spec format_warning(map()) -> iolist().
+format_warning(Warn) ->
+    #{context :=  #{text := Context, length := Length, offset := Offset},
+      rule := #{description := Description},
+      replacements := Repl0
+     } = Warn,
+    Repl1 = lists:sublist([I || #{value := I} <- Repl0], 5),
+    Underscore = [[$  || _ <- lists:seq(1, Offset)], [$~ || _ <- lists:seq(1, Length)]],
+    Replacements = lists:join(", ", Repl1),
+    io_lib:format("~s~n~s~nDescription: ~s~nReplacements: ~s~n",
+                  [Context, Underscore, Description, Replacements]).
+
 %%================================================================================
 %% Internal functions
 %%================================================================================
 
 text_to_data(Text) ->
-    Fun = fun({text, Txt}, Acc) ->
-                  [#{text => Txt}|Acc];
-             ({tag, Tag, _}, Acc) ->
-                  [#{markup => <<"">>}|Acc];
-             ({end_tag, Tag}, Acc) ->
-                  [#{markup => <<"">>}|Acc]
-          end,
-    Payload = trane:sax(<<"<p>", Text/binary, "</p>">>, Fun, []),
+    {_, Payload} = trane:sax(<<"<p>", Text/binary, "</p>">>, fun scan_html/2, {false, []}),
     jsone:encode(#{annotation => lists:reverse(Payload)}).
+
+-record(s,
+        { skip :: boolean()
+        , acc  :: list()
+        }).
+
+scan_html({text, Txt}, {false, Acc}) ->
+    {false, [#{text => Txt}|Acc]};
+scan_html({tag, <<"br">>, _}, {false, Acc}) ->
+    {false, [#{text => <<"\n">>}|Acc]};
+scan_html({tag, <<"code">>, _}, {false, Acc}) ->
+    {true, Acc};
+scan_html({end_tag, <<"code">>}, {true, Acc}) ->
+    {false, Acc};
+scan_html(_Skip, Acc) ->
+    Acc.
 
 wait_langtool(0) ->
     req(<<"Testing...">>);
@@ -76,7 +97,7 @@ wait_langtool(N) ->
     catch
         _:Err ->
             ?LOG_DEBUG("Langtool request issue: ~p", [Err]),
-            timer:sleep(10),
+            timer:sleep(100),
             wait_langtool(N - 1)
     end.
 

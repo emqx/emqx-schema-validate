@@ -4,6 +4,7 @@ APIs
 BPAPI
 BSON
 Backplane
+CA
 CHACHA
 CLI
 CMD
@@ -19,7 +20,7 @@ DevOps
 Dialyzer
 Diffie
 EIP
-EMQ
+EMQX
 EPMD
 ERL
 ETS
