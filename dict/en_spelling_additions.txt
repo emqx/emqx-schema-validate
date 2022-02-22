@@ -107,6 +107,8 @@ cors
 cpu
 ctx
 customizable
+datagram
+datagrams
 desc
 dir
 dns
