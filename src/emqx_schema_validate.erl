@@ -43,25 +43,39 @@ format_undocumented_stats() ->
     [io:format(user, "~-40.. s ~p~n", [Root, Val]) || {Root, Val} <- lists:reverse(Stats)].
 
 spellcheck_schema(Data) ->
-    [do_spellcheck(FullName, I)
-     || #{full_name := FullName, fields := Fields} <- Data, I <- Fields],
+    [begin
+         do_spellcheck([FullName], Node),
+         Fields = maps:get(fields, Node, []),
+         [begin
+              FieldName = [FullName, maps:get(name, Field)],
+              do_spellcheck(FieldName, Field)
+          end || Field <- Fields]
+     end || Node = #{full_name := FullName} <- Data],
     ok.
 
-do_spellcheck(FullName, #{name := Name, desc := Desc}) ->
+%% Check spelling in any description:
+do_spellcheck(FullName, #{desc := Desc}) ->
     Resp = langtool:req(Desc),
     case Resp of
         [] ->
-            [];
+            ok;
         L  ->
             setfail(),
-            io:format(user, "!! '~s'::~s~n~n", [FullName, Name]),
+            io:format(user, "!! '~s'~n~n", [format_name(FullName)]),
             [io:format(user, "~s", [langtool:format_warning(I)]) || I <- L],
-            []
+            ok
     end;
-do_spellcheck(FullName, #{name := Name}) ->
-    ets:update_counter(?TAB, FullName, {2, 1}, {FullName, 0}),
-    io:format(user, "Warning: ~s.~s field doesn't have a description~n", [FullName, Name]),
-    [{FullName, Name}].
+%% Ignore references to structs, since the struct itself should have a description
+do_spellcheck(FullName, #{type := #{kind := <<"struct">>}}) ->
+    io:format(user, "Info: ignoring '~s'~n", [format_name(FullName)]),
+    ok;
+do_spellcheck(<<"Root Config Keys">>, _) ->
+    ok;
+do_spellcheck(FullName, _) ->
+    Record = hd(FullName),
+    ets:update_counter(?TAB, Record, {2, 1}, {Record, 0}),
+    io:format(user, "Warning: '~s' doesn't have a description~n", [format_name(FullName)]),
+    ok.
 
 read_stdio() ->
     case io:get_chars("", 8096) of
@@ -77,3 +91,6 @@ setfail() ->
 
 is_ok() ->
     get(?MODULE) =/= true.
+
+format_name(FullName) ->
+    lists:join("::", FullName).

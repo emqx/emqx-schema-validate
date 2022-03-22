@@ -75,16 +75,27 @@ text_to_data(Text) ->
     {_, Payload} = trane:sax(<<"<p>", Text/binary, "</p>">>, fun scan_html/2, {text, []}),
     jsone:encode(#{annotation => lists:reverse(Payload)}).
 
-scan_html({text, Txt}, {Type, Acc}) ->
-    {Type, [#{Type => Txt}|Acc]};
+scan_html({text, Txt}, {markup, Acc}) ->
+    {markup, [#{markup => Txt}|Acc]};
+scan_html({text, Txt}, {text, Acc}) ->
+    Chunks = lists:reverse(string:split(Txt, "`", all)),
+    {text, scan_text(text, Chunks, Acc)};
 scan_html({tag, "br", _}, {Type, Acc}) ->
-    {Type, [#{Type => <<"\n">>}|Acc]};
+    {Type, [#{markup => <<"<br>">>, interpretAs => <<"\n">>}|Acc]};
 scan_html({tag, "code", _}, {_, Acc}) ->
-    {markup, Acc};
+    {markup, [#{markup => <<"<code>">>, interpretAs => <<" Code ">>} | Acc]};
 scan_html({end_tag, "code"}, {_, Acc}) ->
-    {text, [#{text => <<"Code">>}|Acc]}; %% Create a placeholder
+    {text, [#{markup => <<"</code>">>} | Acc]};
 scan_html(_Skip, Acc) ->
     Acc.
+
+%% Handle `code`:
+scan_text(_, [], Acc) ->
+    Acc;
+scan_text(text, [Chunk|Rest], Acc) ->
+    [#{text => Chunk} | scan_text(markup, Rest, Acc)];
+scan_text(markup, [Chunk|Rest], Acc) ->
+    [#{markup => Chunk, interpretAs => <<" Code ">>}|scan_text(text, Rest, Acc)].
 
 wait_langtool(0) ->
     req(<<"Testing...">>);
