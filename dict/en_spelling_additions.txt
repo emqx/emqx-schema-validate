@@ -184,6 +184,7 @@ procmem
 procs
 progname
 prometheus
+pushgateway
 proto
 ps
 psk
