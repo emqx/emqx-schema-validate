@@ -67,7 +67,6 @@ do_spellcheck(FullName, #{desc := Desc}) ->
     end;
 %% Ignore references to structs, since the struct itself should have a description
 do_spellcheck(FullName, #{type := #{kind := <<"struct">>}}) ->
-    io:format(user, "Info: ignoring '~s'~n", [format_name(FullName)]),
     ok;
 do_spellcheck(<<"Root Config Keys">>, _) ->
     ok;
