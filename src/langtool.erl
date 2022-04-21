@@ -40,8 +40,9 @@ stop() ->
 -spec req(string()) -> [map()].
 req(Text) ->
     Annotation = text_to_data(Text),
+    Req = jsone:encode(#{annotation => Annotation}),
     Payload = {form, [{language, <<"en-US">>},
-                      {data, Annotation},
+                      {data, Req},
                       {disabledCategories, <<"TYPOGRAPHY">>}]},
     Headers = [],
     URL = application:get_env(emqx_schema_validate, langtool_url,
@@ -71,31 +72,65 @@ format_warning(Warn) ->
 %% Internal functions
 %%================================================================================
 
+-record(s,
+        { n   = 0  :: non_neg_integer() % Number of nested code blocks
+        , m   = 0  :: 0..1 % Number of backtics
+        , acc = [] :: [map()]
+        }).
+
 text_to_data(Text) ->
-    {_, Payload} = trane:sax(<<"<p>", Text/binary, "</p>">>, fun scan_html/2, {text, []}),
-    jsone:encode(#{annotation => lists:reverse(Payload)}).
+    #s{acc = Payload} = trane:sax(<<"<p>", Text/binary, "</p>">>, fun scan/2, #s{}),
+    lists:reverse(Payload).
 
-scan_html({text, Txt}, {markup, Acc}) ->
-    {markup, [#{markup => Txt}|Acc]};
-scan_html({text, Txt}, {text, Acc}) ->
-    Chunks = lists:reverse(string:split(Txt, "`", all)),
-    {text, scan_text(text, Chunks, Acc)};
-scan_html({tag, "br", _}, {Type, Acc}) ->
-    {Type, [#{markup => <<"<br>">>, interpretAs => <<"\n">>}|Acc]};
-scan_html({tag, "code", _}, {_, Acc}) ->
-    {markup, [#{markup => <<"<code>">>, interpretAs => <<" Code ">>} | Acc]};
-scan_html({end_tag, "code"}, {_, Acc}) ->
-    {text, [#{markup => <<"</code>">>} | Acc]};
-scan_html(_Skip, Acc) ->
-    Acc.
+scan({text, Txt}, S) ->
+    Chunks = string:split(Txt, "`", all),
+    scan_text(Chunks, S, false);
+scan({tag, "code", _}, S) ->
+    start_code_block("<code>", S);
+scan({end_tag, "code"}, S) ->
+    end_code_block(<<"</code>">>, S);
+scan({tag, "br", _}, S = #s{n = 0, acc = Acc}) ->
+    S#s{acc = [#{markup => <<"<br>">>, interpretAs => <<"\n">>}|Acc]};
+scan(OtherTag, S = #s{n = N, acc = Acc}) when N > 0 ->
+    S#s{acc = [fmt_tag(OtherTag)|Acc]};
+scan(_, S = #s{n = 0, acc = Acc}) ->
+    S#s{acc = Acc}.
 
-%% Handle `code`:
-scan_text(_, [], Acc) ->
-    Acc;
-scan_text(text, [Chunk|Rest], Acc) ->
-    [#{text => Chunk} | scan_text(markup, Rest, Acc)];
-scan_text(markup, [Chunk|Rest], Acc) ->
-    [#{markup => Chunk, interpretAs => <<" Code ">>}|scan_text(text, Rest, Acc)].
+scan_text([], S, _) ->
+    S;
+scan_text([Chunk|Rest], S0 = #s{m = M}, Increase) ->
+    S1 = if Increase andalso M =:= 0 ->
+                 start_code_block(<<"`">>, S0#s{m = 1});
+            Increase andalso M =:= 1 ->
+                 end_code_block(<<"`">>, S0#s{m = 0});
+            true ->
+                 S0
+         end,
+    S = push_chunk(Chunk, S1),
+    scan_text(Rest, S, true).
+
+push_chunk(<<>>, S) ->
+    S;
+push_chunk(Chunk, S = #s{n = 0, acc = Acc}) ->
+    S#s{acc = [#{text => Chunk}|Acc]};
+push_chunk(Chunk, S = #s{acc = Acc}) ->
+    S#s{acc = [#{markup => Chunk}|Acc]}.
+
+start_code_block(Markup, S = #s{n = 0, acc = Acc}) ->
+    It = #{markup => Markup, interpretAs => <<" Code ">>},
+    S#s{acc = [It|Acc], n = 1};
+start_code_block(Markup, S = #s{n = N, acc = Acc}) ->
+    It = #{markup => Markup},
+    S#s{acc = [It|Acc], n = N + 1}.
+
+end_code_block(Markup, S = #s{n = N, acc = Acc}) ->
+    It = #{markup => Markup},
+    S#s{acc = [It|Acc], n = max(N - 1, 0)}.
+
+fmt_tag({tag, Tag, _Attrs}) ->
+    #{markup => iolist_to_binary(["<", Tag, ">"])};
+fmt_tag({end_tag, Tag}) ->
+    #{markup => iolist_to_binary(["</", Tag, ">"])}.
 
 wait_langtool(0) ->
     req(<<"Testing...">>);
