@@ -59,12 +59,14 @@ do_spellcheck(FullName, #{desc := Desc}) ->
 %% Ignore references to structs, since the struct itself should have a description
 do_spellcheck(FullName, #{type := #{kind := <<"struct">>}}) ->
     ok;
-do_spellcheck([<<"Root Config Keys">>], _) ->
-    ok;
 do_spellcheck(FullName, _) ->
     Record = hd(FullName),
-    io:format(user, "Error: '~s' doesn't have a description~n", [format_name(FullName)]),
-    setfail(),
+    case binary:match(Record, [<<"Root Config Keys">>]) of
+       nomatch -> 
+          io:format(user, "Error: '~s' doesn't have a description~n", [format_name(FullName)]),
+          setfail();
+       _ -> ok
+    end,
     ok.
 
 read_stdio() ->
