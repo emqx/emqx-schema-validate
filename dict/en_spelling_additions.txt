@@ -255,3 +255,7 @@ websocket
 ws
 wss
 xml
+HStream
+HStreamDB
+hstream
+hstreamDB
