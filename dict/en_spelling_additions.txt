@@ -259,3 +259,5 @@ HStream
 HStreamDB
 hstream
 hstreamDB
+hstream
+hstreamdb
