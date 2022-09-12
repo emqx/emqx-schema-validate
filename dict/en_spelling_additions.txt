@@ -163,6 +163,7 @@ jenkins
 jq
 kb
 keepalive
+keytab
 libcoap
 lifecycle
 localhost
