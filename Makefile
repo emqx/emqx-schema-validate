@@ -2,12 +2,10 @@ TAG := mylangtool
 
 .PHONY: run
 run: $(TAG)
-	docker run --name $(TAG) -d $(TAG) || true
-	cat ../emqx/_build/emqx/lib/emqx_dashboard/priv/www/static/schema.json | \
-		docker exec -i $(TAG) ./emqx_schema_validate -
+	docker run --name $(TAG) -t --rm -v $(shell pwd)/../emqx/_build/docgen/emqx/schema-en.json:/schema.json -v $(shell pwd)/../emqx/scripts/spellcheck/dicts:/dicts $(TAG) /schema.json
 
 .PHONY: $(TAG)
-$(TAG): Dockerfile dict/en_spelling_additions.txt rebar.config $(wildcard src/*)
+$(TAG): Dockerfile rebar.config $(wildcard src/*)
 	docker build -t $(TAG) .
 	docker kill $(TAG) || true
 	docker rm $(TAG) || true
