@@ -9,5 +9,5 @@ Mount dict files (.txt suffix) to `/dicts/` dir.
 ```
 docker run --rm -v path/to/dicts:/dicts \
     -v path/to/schema.json:/schema.json \
-    ghcr.io/emqx/emqx-schema-validate:0.4.0 /scehma.json
+    ghcr.io/emqx/emqx-schema-validate:0.4.0 /schema.json
 ```
