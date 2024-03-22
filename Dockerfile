@@ -1,4 +1,4 @@
-FROM erikvl87/languagetool
+FROM erikvl87/languagetool:5.8-dockerupdate-2
 
 # Improving the spell checker
 # http://wiki.languagetool.org/hunspell-support
