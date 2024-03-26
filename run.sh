@@ -7,9 +7,22 @@ for dict in /dicts/*.txt; do
     cat "$dict" >> org/languagetool/resource/en/hunspell/spelling.txt
 done
 
-ARGS="$*"
+SCHEMA_FILE=""
+MAX_CONCURRENCY="10"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -j)
+        MAX_CONCURRENCY="$2"
+        shift 2
+        ;;
+      *)
+        SCHEMA_FILE="$1"
+        shift
+        ;;
+    esac
+done
 
-if [ -z "${ARGS}" ]; then
+if [ -z "${SCHEMA_FILE}" ]; then
     echo "Missing schema file"
     exit 1
 fi
@@ -30,6 +43,6 @@ while ! curl --fail --data "language=en-US&text=a simple test" http://localhost:
     sleep 1
 done
 
-echo "Checking $ARGS..."
+echo "Checking $SCHEMA_FILE with $MAX_CONCURRENCY processes..."
 
-emqx_schema_validate "$ARGS"
+emqx_schema_validate -j "$MAX_CONCURRENCY" "$SCHEMA_FILE"

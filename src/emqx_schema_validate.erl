@@ -1,21 +1,27 @@
 -module(emqx_schema_validate).
 
 %% API exports
--export([main/1]).
+-export([main/1, do_spellcheck_schema/1]).
 
--define(TAB, stats_tab).
+-define(DEFAULT_MAX_CONCURRENCY, 10).
 
 %%====================================================================
 %% API functions
 %%====================================================================
 
-main(["-"]) ->
+main(Args) ->
+    main(Args, ?DEFAULT_MAX_CONCURRENCY).
+
+main(["-j", N0 | Rest], _MaxConcurrency) ->
+    N = list_to_integer(N0),
+    main(Rest, N);
+main(["-"], MaxConcurrency) ->
     Binary = iolist_to_binary(read_stdio()),
-    process_data(Binary);
-main([JsonFile]) ->
+    process_data(Binary, MaxConcurrency);
+main([JsonFile], MaxConcurrency) ->
     {ok, Binary} = file:read_file(JsonFile),
-    process_data(Binary);
-main(_) ->
+    process_data(Binary, MaxConcurrency);
+main(_, _) ->
     io:format("Usage: emqx_schema_validate <path-to-json-schema-dump>~n", []),
     erlang:halt(1).
 
@@ -23,26 +29,31 @@ main(_) ->
 %% Internal functions
 %%====================================================================
 
-process_data(Binary) ->
+process_data(Binary, MaxConcurrency) ->
     {ok, _} = application:ensure_all_started(emqx_schema_validate),
     langtool:start(),
     Data = jsone:decode(Binary, [{object_format, map}, {keys, atom}]),
-    spellcheck_schema(Data),
+    spellcheck_schema(Data, MaxConcurrency),
     case is_ok() of
         true -> halt(0);
         false -> halt(1)
     end.
 
-spellcheck_schema(Data) ->
-    [begin
-         do_spellcheck([FullName], Node),
-         Fields = maps:get(fields, Node, []),
-         [begin
-              FieldName = [FullName, maps:get(name, Field)],
-              do_spellcheck(FieldName, Field)
-          end || Field <- Fields]
-     end || Node = #{full_name := FullName} <- Data],
+spellcheck_schema(Data = [_ | _], MaxConcurrency) ->
+    Chunk = lists:sublist(Data, MaxConcurrency),
+    Rest = lists:sublist(Data, MaxConcurrency, length(Data)),
+    _ = rpc:pmap({?MODULE, do_spellcheck_schema}, _ExtraArgs = [], Chunk),
+    spellcheck_schema(Rest, MaxConcurrency);
+spellcheck_schema(_Data = [], _MaxConcurrency) ->
     ok.
+
+do_spellcheck_schema(Node = #{full_name := FullName}) ->
+    do_spellcheck([FullName], Node),
+    Fields = maps:get(fields, Node, []),
+    [begin
+         FieldName = [FullName, maps:get(name, Field)],
+         do_spellcheck(FieldName, Field)
+     end || Field <- Fields].
 
 %% Check spelling in any description:
 do_spellcheck(FullName, #{desc := Desc}) ->
@@ -52,17 +63,18 @@ do_spellcheck(FullName, #{desc := Desc}) ->
             ok;
         L  ->
             setfail(),
-            io:format(user, "!! '~s'~n~n", [format_name(FullName)]),
-            [io:format(user, "~s", [langtool:format_warning(I)]) || I <- L],
+            Header = io_lib:format("!! '~s'~n~n", [format_name(FullName)]),
+            Warnings = [io_lib:format("~s", [langtool:format_warning(I)]) || I <- L],
+            io:put_chars(user, [Header, Warnings]),
             ok
     end;
 %% Ignore references to structs, since the struct itself should have a description
-do_spellcheck(FullName, #{type := #{kind := <<"struct">>}}) ->
+do_spellcheck(_FullName, #{type := #{kind := <<"struct">>}}) ->
     ok;
 do_spellcheck(FullName, _) ->
     Record = hd(FullName),
     case binary:match(Record, [<<"Root Config Keys">>]) of
-       nomatch -> 
+       nomatch ->
           io:format(user, "Error: '~s' doesn't have a description~n", [format_name(FullName)]),
           setfail();
        _ -> ok
@@ -79,10 +91,10 @@ read_stdio() ->
     end.
 
 setfail() ->
-    put(?MODULE, true).
+    persistent_term:put(?MODULE, true).
 
 is_ok() ->
-    get(?MODULE) =/= true.
+    persistent_term:get(?MODULE, false) =/= true.
 
 format_name(FullName) ->
     lists:join("::", FullName).
