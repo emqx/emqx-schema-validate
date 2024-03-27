@@ -39,13 +39,35 @@ process_data(Binary, MaxConcurrency) ->
         false -> halt(1)
     end.
 
-spellcheck_schema(Data = [_ | _], MaxConcurrency) ->
+spellcheck_schema(Data, MaxConcurrency) ->
     Chunk = lists:sublist(Data, MaxConcurrency),
     Rest = lists:sublist(Data, MaxConcurrency, length(Data)),
-    _ = rpc:pmap({?MODULE, do_spellcheck_schema}, _ExtraArgs = [], Chunk),
-    spellcheck_schema(Rest, MaxConcurrency);
-spellcheck_schema(_Data = [], _MaxConcurrency) ->
-    ok.
+    Refs =
+        lists:foldl(
+          fun(Node, Acc) ->
+             {Pid, Ref} = spawn_monitor(?MODULE, do_spellcheck_schema, [Node]),
+             Acc#{{Pid, Ref} => true}
+          end,
+          #{},
+          Chunk),
+    spellcheck_schema_loop(Rest, Refs).
+
+spellcheck_schema_loop([] = _Data, Refs) when map_size(Refs) == 0 ->
+    ok;
+spellcheck_schema_loop([] = Data, Refs0) ->
+    receive
+        {'DOWN', Ref, process, Pid, _} when is_map_key({Pid, Ref}, Refs0) ->
+            Refs = maps:remove({Pid, Ref}, Refs0),
+            spellcheck_schema_loop(Data, Refs)
+    end;
+spellcheck_schema_loop([Node | Rest], Refs0) ->
+    receive
+        {'DOWN', Ref, process, Pid, _} when is_map_key({Pid, Ref}, Refs0) ->
+            Refs1 = maps:remove({Pid, Ref}, Refs0),
+            {NPid, NRef} = spawn_monitor(?MODULE, do_spellcheck_schema, [Node]),
+            Refs = Refs1#{{NPid, NRef} => true},
+            spellcheck_schema_loop(Rest, Refs)
+    end.
 
 do_spellcheck_schema(Node = #{full_name := FullName}) ->
     do_spellcheck([FullName], Node),
